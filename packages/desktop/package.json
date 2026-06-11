@@ -1,0 +1,70 @@
+{
+  "name": "@orka/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/main.js",
+  "description": "Nokia Orka Translator - Desktop Application",
+  "author": "Nokia",
+  "scripts": {
+    "dev": "electron .",
+    "build": "bash ../../scripts/build-desktop.sh",
+    "package": "npm run build && electron-builder --mac --win",
+    "package:win": "npm run build && electron-builder --win --x64",
+    "package:mac": "npm run build && electron-builder --mac"
+  },
+  "dependencies": {
+    "app-builder-bin": "^5.0.0-alpha.10",
+    "electron-store": "^10.0.0"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "^26.15.2"
+  },
+  "build": {
+    "appId": "com.nokia.orka-translator",
+    "productName": "Nokia Orka Translator",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "bundle/server",
+        "to": "server"
+      },
+      {
+        "from": "bundle/webapp",
+        "to": "webapp"
+      },
+      {
+        "from": "bundle/.env",
+        "to": ".env"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "Nokia-Orka-Translator-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Nokia-Orka-Translator-Portable-${version}.${ext}"
+    }
+  }
+}

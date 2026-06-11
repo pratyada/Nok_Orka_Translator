@@ -1,0 +1,38 @@
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build
+build/
+out/
+output/
+packages/desktop/bundle/
+packages/desktop/dist/
+reference/
+
+# Docker
+.docker/
+
+# Azure
+.azure/
+output.zip

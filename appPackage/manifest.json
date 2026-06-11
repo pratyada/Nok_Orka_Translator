@@ -1,0 +1,45 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "0.1.0",
+  "id": "{{TEAMS_APP_ID}}",
+  "developer": {
+    "name": "Nokia",
+    "websiteUrl": "https://nokia.com",
+    "privacyUrl": "https://nokia.com/privacy",
+    "termsOfUseUrl": "https://nokia.com/terms"
+  },
+  "name": {
+    "short": "Orka Translator",
+    "full": "Nokia Orka Live Meeting Translator"
+  },
+  "description": {
+    "short": "Real-time speech translation for Teams meetings",
+    "full": "Nokia Orka Translator provides real-time speech-to-speech translation during Teams meetings. Supports English, Spanish, French, and Portuguese. Powered by AI for accurate, context-aware translations including Nokia-specific terminology."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#124191",
+  "configurableTabs": [
+    {
+      "configurationUrl": "{{BASE_URL}}/config",
+      "canUpdateConfiguration": true,
+      "scopes": ["groupchat"],
+      "context": ["meetingSidePanel", "meetingStage"],
+      "meetingSurfaces": {
+        "sidePanel": {
+          "preferredWidth": 400
+        }
+      }
+    }
+  ],
+  "permissions": ["identity", "messageTeamMembers"],
+  "devicePermissions": ["media"],
+  "validDomains": ["{{VALID_DOMAIN}}"],
+  "webApplicationInfo": {
+    "id": "{{AZURE_CLIENT_ID}}",
+    "resource": "api://{{VALID_DOMAIN}}/{{AZURE_CLIENT_ID}}"
+  }
+}
