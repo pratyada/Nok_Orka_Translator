@@ -1,19 +1,18 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Button,
+  Dropdown,
+  Option,
   makeStyles,
   tokens,
   Switch,
   MessageBar,
   MessageBarBody,
-  Text,
 } from "@fluentui/react-components";
 import { SUPPORTED_LANGUAGES, type LanguageCode } from "@orka/shared";
-import type { StreamDirection } from "@orka/shared";
-import { useConversationSocket } from "../hooks/useTranslationSocket";
+import { useListenerSocket, type Turn } from "../hooks/useTranslationSocket";
 import { useAudioCapture } from "../hooks/useAudioCapture";
 import { AudioPlayer } from "../services/audio-player";
-import { LanguageSelector } from "./LanguageSelector";
 import { StatusIndicator } from "./StatusIndicator";
 
 const useStyles = makeStyles({
@@ -35,6 +34,21 @@ const useStyles = makeStyles({
     boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
     flexWrap: "wrap",
   },
+  langGroup: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  },
+  langLabel: {
+    fontSize: "12px",
+    fontWeight: 600,
+    color: tokens.colorNeutralForeground3,
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+  },
+  langDropdown: {
+    minWidth: "180px",
+  },
   startBtn: {
     minWidth: "180px",
     fontWeight: 600,
@@ -46,29 +60,7 @@ const useStyles = makeStyles({
     fontWeight: 600,
     ":hover": { backgroundColor: "#b52b2e", color: "#ffffff" },
   },
-  streams: {
-    flex: 1,
-    display: "flex",
-    gap: "12px",
-    minHeight: 0,
-  },
-  streamColumn: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-    minHeight: 0,
-  },
-  columnHeader: {
-    fontSize: "13px",
-    fontWeight: 700,
-    color: "#124191",
-    padding: "4px 0",
-    textAlign: "center",
-    textTransform: "uppercase",
-    letterSpacing: "0.5px",
-  },
-  pane: {
+  transcriptPane: {
     flex: 1,
     display: "flex",
     flexDirection: "column",
@@ -78,37 +70,50 @@ const useStyles = makeStyles({
     overflow: "hidden",
     minHeight: 0,
   },
-  paneHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "8px 12px",
+  transcriptHeader: {
+    padding: "10px 16px",
     borderBottom: "1px solid #eee",
     fontSize: "12px",
-    fontWeight: 600,
+    fontWeight: 700,
+    color: "#124191",
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+    backgroundColor: "#f9fafd",
   },
-  paneHeaderOut: { backgroundColor: "#fff8f0", color: "#b35900" },
-  paneHeaderIn: { backgroundColor: "#f0f7ff", color: "#124191" },
-  paneTag: {
-    fontSize: "10px",
-    padding: "2px 6px",
-    borderRadius: "8px",
-    backgroundColor: "rgba(0,0,0,0.05)",
-  },
-  paneContent: {
+  transcriptBody: {
     flex: 1,
-    padding: "10px 12px",
     overflowY: "auto",
+    padding: "12px 16px",
+  },
+  turn: {
+    marginBottom: "16px",
+    paddingBottom: "12px",
+    borderBottom: "1px dashed #e6e8ec",
+  },
+  turnOriginal: {
+    fontSize: "12px",
+    color: tokens.colorNeutralForeground3,
+    fontStyle: "italic",
+    marginBottom: "4px",
     whiteSpace: "pre-wrap",
-    fontSize: "14px",
-    lineHeight: "1.6",
+  },
+  turnTranslated: {
+    fontSize: "15px",
+    color: "#1a1a1a",
+    lineHeight: "1.5",
+    whiteSpace: "pre-wrap",
+  },
+  turnSkipped: {
+    fontSize: "13px",
+    color: tokens.colorNeutralForeground4,
+    fontStyle: "italic",
   },
   placeholder: {
     color: tokens.colorNeutralForeground4,
     fontStyle: "italic",
     fontSize: "13px",
     textAlign: "center",
-    padding: "20px",
+    padding: "24px",
   },
   footer: {
     display: "flex",
@@ -128,29 +133,26 @@ const useStyles = makeStyles({
     fontSize: "12px",
     color: tokens.colorNeutralForeground3,
   },
-  levelBars: {
-    display: "flex",
-    gap: "12px",
-    alignItems: "center",
-  },
   levelLabel: {
     fontSize: "10px",
     color: tokens.colorNeutralForeground3,
   },
 });
 
+const LANGUAGE_OPTIONS = Object.entries(SUPPORTED_LANGUAGES).map(
+  ([code, { name }]) => ({ code: code as LanguageCode, name }),
+);
+
 export function TranslationPanel() {
   const styles = useStyles();
-  const [myLang, setMyLang] = useState<LanguageCode>("hi");
-  const [theirLang, setTheirLang] = useState<LanguageCode>("en");
+  const [target, setTarget] = useState<LanguageCode>("en");
   const [autoPlay, setAutoPlay] = useState(true);
   const audioPlayerRef = useRef<AudioPlayer | null>(null);
+  const transcriptRef = useRef<HTMLDivElement>(null);
 
-  // Only play incoming audio (what they said, translated to my language)
   const handleTranslatedAudio = useCallback(
-    (stream: StreamDirection, pcmData: ArrayBuffer) => {
+    (_turnId: string, pcmData: ArrayBuffer) => {
       if (!autoPlay) return;
-      if (stream !== "incoming") return; // Only play translations of what I hear
       if (!audioPlayerRef.current) {
         audioPlayerRef.current = new AudioPlayer();
       }
@@ -160,56 +162,52 @@ export function TranslationPanel() {
     [autoPlay],
   );
 
-  const conv = useConversationSocket({
+  const listener = useListenerSocket({
     onTranslatedAudio: handleTranslatedAudio,
   });
 
   const isActiveRef = useRef(false);
-  isActiveRef.current = conv.isActive;
+  isActiveRef.current = listener.isActive;
 
-  // Mic capture (what I say)
-  const mic = useAudioCapture(
-    useCallback(
-      (chunk: ArrayBuffer) => {
-        if (isActiveRef.current) {
-          conv.sendAudio("outgoing", chunk);
-        }
-      },
-      [conv.sendAudio],
-    ),
-  );
-
-  // System audio capture (what I hear from Teams)
+  // System audio capture, with feedback-loop suppression while our own
+  // translated audio is playing through the same render endpoint.
   const system = useAudioCapture(
     useCallback(
       (chunk: ArrayBuffer) => {
         if (isActiveRef.current) {
-          conv.sendAudio("incoming", chunk);
+          listener.sendAudio(chunk);
         }
       },
-      [conv.sendAudio],
+      [listener.sendAudio],
     ),
+    useCallback(() => !!audioPlayerRef.current?.playing, []),
   );
 
   const handleStart = useCallback(async () => {
-    conv.startConversation(myLang, theirLang);
-    // Start both captures
-    await mic.start("mic");
+    listener.startListening(target);
     try {
       await system.start("system");
-    } catch {
-      console.warn("[orka] System audio capture not available — mic-only mode");
+    } catch (err) {
+      console.error("[orka] System audio capture failed", err);
     }
-  }, [myLang, theirLang, conv, mic, system]);
+  }, [target, listener, system]);
 
   const handleStop = useCallback(() => {
-    mic.stop();
     system.stop();
-    conv.stopConversation();
+    listener.stopListening();
     audioPlayerRef.current?.stop();
-  }, [mic, system, conv]);
+  }, [system, listener]);
 
-  const error = mic.error || system.error || conv.error;
+  // Auto-scroll transcript to bottom as new turns arrive
+  useEffect(() => {
+    transcriptRef.current?.scrollTo({
+      top: transcriptRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [listener.turns]);
+
+  const error = system.error || listener.error;
+  const targetName = SUPPORTED_LANGUAGES[target].name;
 
   return (
     <div className={styles.root}>
@@ -220,25 +218,35 @@ export function TranslationPanel() {
       )}
 
       <div className={styles.controlBar}>
-        <LanguageSelector
-          source={myLang}
-          target={theirLang}
-          onSourceChange={setMyLang}
-          onTargetChange={setTheirLang}
-          disabled={conv.isActive}
-          sourceLabel="I speak"
-          targetLabel="They speak"
-        />
+        <div className={styles.langGroup}>
+          <span className={styles.langLabel}>I want to hear in</span>
+          <Dropdown
+            className={styles.langDropdown}
+            value={targetName}
+            selectedOptions={[target]}
+            onOptionSelect={(_, data) =>
+              setTarget(data.optionValue as LanguageCode)
+            }
+            disabled={listener.isActive}
+            size="medium"
+          >
+            {LANGUAGE_OPTIONS.map((lang) => (
+              <Option key={lang.code} value={lang.code}>
+                {lang.name}
+              </Option>
+            ))}
+          </Dropdown>
+        </div>
 
-        {!conv.isActive ? (
+        {!listener.isActive ? (
           <Button
             appearance="primary"
             size="large"
             className={styles.startBtn}
             onClick={handleStart}
-            disabled={!conv.isConnected}
+            disabled={!listener.isConnected}
           >
-            Start Conversation
+            Start Listening
           </Button>
         ) : (
           <Button
@@ -251,105 +259,67 @@ export function TranslationPanel() {
         )}
       </div>
 
-      <div className={styles.streams}>
-        {/* Left column: What I say */}
-        <div className={styles.streamColumn}>
-          <div className={styles.columnHeader}>
-            What I Say ({SUPPORTED_LANGUAGES[myLang].name})
-          </div>
-          <div className={styles.pane}>
-            <div className={`${styles.paneHeader} ${styles.paneHeaderOut}`}>
-              <span>{SUPPORTED_LANGUAGES[myLang].name}</span>
-              <span className={styles.paneTag}>My speech</span>
-            </div>
-            <div className={styles.paneContent}>
-              {conv.outgoingOriginal || (
-                <div className={styles.placeholder}>
-                  {conv.isActive ? "Speak now..." : "Your speech appears here"}
-                </div>
-              )}
-            </div>
-          </div>
-          <div className={styles.pane}>
-            <div className={`${styles.paneHeader} ${styles.paneHeaderOut}`}>
-              <span>{SUPPORTED_LANGUAGES[theirLang].name}</span>
-              <span className={styles.paneTag}>They hear this</span>
-            </div>
-            <div className={styles.paneContent}>
-              {conv.outgoingTranslated || (
-                <div className={styles.placeholder}>
-                  Translation for them
-                </div>
-              )}
-            </div>
-          </div>
+      <div className={styles.transcriptPane}>
+        <div className={styles.transcriptHeader}>
+          Meeting transcript &mdash; everything translated to {targetName}
         </div>
-
-        {/* Right column: What they say */}
-        <div className={styles.streamColumn}>
-          <div className={styles.columnHeader}>
-            What They Say ({SUPPORTED_LANGUAGES[theirLang].name})
-          </div>
-          <div className={styles.pane}>
-            <div className={`${styles.paneHeader} ${styles.paneHeaderIn}`}>
-              <span>{SUPPORTED_LANGUAGES[theirLang].name}</span>
-              <span className={styles.paneTag}>Their speech</span>
+        <div className={styles.transcriptBody} ref={transcriptRef}>
+          {listener.turns.length === 0 ? (
+            <div className={styles.placeholder}>
+              {listener.isActive
+                ? "Listening for speech in the meeting..."
+                : "Click \"Start Listening\" to begin translating meeting audio."}
             </div>
-            <div className={styles.paneContent}>
-              {conv.incomingOriginal || (
-                <div className={styles.placeholder}>
-                  {conv.isActive ? "Listening for their speech..." : "Their speech appears here"}
-                </div>
-              )}
-            </div>
-          </div>
-          <div className={styles.pane}>
-            <div className={`${styles.paneHeader} ${styles.paneHeaderIn}`}>
-              <span>{SUPPORTED_LANGUAGES[myLang].name}</span>
-              <span className={styles.paneTag}>I hear this</span>
-            </div>
-            <div className={styles.paneContent}>
-              {conv.incomingTranslated || (
-                <div className={styles.placeholder}>
-                  Translation for me
-                </div>
-              )}
-            </div>
-          </div>
+          ) : (
+            listener.turns.map((turn) => <TurnRow key={turn.turnId} turn={turn} />)
+          )}
         </div>
       </div>
 
       <div className={styles.footer}>
         <StatusIndicator
-          isConnected={conv.isConnected}
-          isTranslating={conv.isActive}
+          isConnected={listener.isConnected}
+          isTranslating={listener.isActive}
           engine="realtime"
-          audioLevel={Math.max(mic.audioLevel, system.audioLevel)}
+          audioLevel={system.audioLevel}
         />
         <div className={styles.footerRight}>
-          <div className={styles.levelBars}>
-            <span className={styles.levelLabel}>Mic</span>
-            <StatusIndicator
-              isConnected={true}
-              isTranslating={mic.isCapturing}
-              engine={null}
-              audioLevel={mic.audioLevel}
-            />
-            <span className={styles.levelLabel}>System</span>
-            <StatusIndicator
-              isConnected={true}
-              isTranslating={system.isCapturing}
-              engine={null}
-              audioLevel={system.audioLevel}
-            />
-          </div>
+          <span className={styles.levelLabel}>System audio</span>
+          <StatusIndicator
+            isConnected={true}
+            isTranslating={system.isCapturing}
+            engine={null}
+            audioLevel={system.audioLevel}
+          />
           <Switch
-            label={<span className={styles.switchLabel}>Auto-play audio</span>}
+            label={<span className={styles.switchLabel}>Auto-play translation</span>}
             checked={autoPlay}
             onChange={(_, data) => setAutoPlay(data.checked)}
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+function TurnRow({ turn }: { turn: Turn }) {
+  const styles = useStyles();
+  return (
+    <div className={styles.turn}>
+      {turn.originalText && (
+        <div className={styles.turnOriginal}>&ldquo;{turn.originalText}&rdquo;</div>
+      )}
+      {turn.skipped ? (
+        <div className={styles.turnSkipped}>
+          (already in your language &mdash; no translation needed)
+        </div>
+      ) : (
+        <div className={styles.turnTranslated}>
+          {turn.translatedText || (
+            <span className={styles.turnSkipped}>translating&hellip;</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

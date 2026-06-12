@@ -1,71 +1,74 @@
 import type { LanguageCode } from "./languages.js";
 
-/** Which audio stream: outgoing (my mic) or incoming (what I hear) */
-export type StreamDirection = "outgoing" | "incoming";
-
 // Client -> Server messages
 export type ClientMessage =
-  | StartConversationMessage
-  | StopTranslationMessage
+  | StartListeningMessage
+  | StopListeningMessage
   | AudioChunkMessage;
 
-export interface StartConversationMessage {
-  type: "start_conversation";
-  /** Language I speak */
-  myLanguage: LanguageCode;
-  /** Language the other person speaks */
-  theirLanguage: LanguageCode;
-  useFallback?: boolean;
+export interface StartListeningMessage {
+  type: "start_listening";
+  /** The language the user wants to hear translations in */
+  targetLanguage: LanguageCode;
 }
 
-export interface StopTranslationMessage {
-  type: "stop_translation";
+export interface StopListeningMessage {
+  type: "stop_listening";
 }
 
 export interface AudioChunkMessage {
   type: "audio_chunk";
-  /** Which stream this audio belongs to */
-  stream: StreamDirection;
   /** Base64-encoded PCM audio data (24kHz, 16-bit, mono) */
   data: string;
 }
 
 // Server -> Client messages
 export type ServerMessage =
-  | ConversationReadyMessage
+  | SessionReadyMessage
   | TranscriptMessage
   | TranslatedTextMessage
   | TranslatedAudioMessage
+  | TurnSkippedMessage
   | ErrorMessage
   | SessionEndedMessage;
 
-export interface ConversationReadyMessage {
-  type: "conversation_ready";
+export interface SessionReadyMessage {
+  type: "session_ready";
   sessionId: string;
-  myLanguage: LanguageCode;
-  theirLanguage: LanguageCode;
+  targetLanguage: LanguageCode;
 }
 
+/** Raw transcription of what was heard, in the language it was spoken */
 export interface TranscriptMessage {
   type: "transcript";
-  stream: StreamDirection;
+  turnId: string;
   text: string;
   isFinal: boolean;
+  /** ISO 639-1 code Whisper detected, if available */
+  detectedLanguage?: LanguageCode;
 }
 
+/** Translation streamed back. Absent when input language already matches target. */
 export interface TranslatedTextMessage {
   type: "translated_text";
-  stream: StreamDirection;
+  turnId: string;
   text: string;
   isFinal: boolean;
 }
 
 export interface TranslatedAudioMessage {
   type: "translated_audio";
-  stream: StreamDirection;
-  /** Base64-encoded audio data */
+  turnId: string;
+  /** Base64-encoded audio */
   data: string;
   format: "pcm" | "mp3" | "opus";
+}
+
+/** Speaker's language matched the listener's target — no translation produced. */
+export interface TurnSkippedMessage {
+  type: "turn_skipped";
+  turnId: string;
+  reason: "same_language";
 }
 
 export interface ErrorMessage {

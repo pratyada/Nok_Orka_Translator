@@ -1,41 +1,44 @@
 import WebSocket from "ws";
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
 import { OPENAI_REALTIME_CONFIG } from "@orka/shared";
 import type { LanguageCode } from "@orka/shared";
 import { config } from "../config/index.js";
 import { getLanguageName } from "../config/languages.js";
 
 /**
- * Events emitted:
- * - original_transcript(text: string, isFinal: boolean)
- * - translated_text(text: string, isFinal: boolean)
- * - translated_audio(audioData: Buffer)
- * - error(error: Error)
+ * Multi-party translator: listens to a stream of speech from any language,
+ * translates each turn to `target`. If the spoken language already matches
+ * `target`, the model is instructed to stay silent (no translated output).
+ *
+ * Events:
+ * - transcript(turnId, text, isFinal)
+ * - translated_text(turnId, text, isFinal)
+ * - translated_audio(turnId, audioData: Buffer)
+ * - turn_skipped(turnId, reason)
+ * - error(Error)
  * - connected()
  * - disconnected()
  */
 export class OpenAIRealtimeService extends EventEmitter {
   private ws: WebSocket | null = null;
-  private source: LanguageCode;
   private target: LanguageCode;
   private isConnected = false;
+  private currentTurnId: string | null = null;
+  private currentTurnEmittedOutput = false;
 
-  constructor(source: LanguageCode, target: LanguageCode) {
+  constructor(target: LanguageCode) {
     super();
-    this.source = source;
     this.target = target;
   }
 
   async connect(): Promise<void> {
     const url = `${OPENAI_REALTIME_CONFIG.baseUrl}?model=${OPENAI_REALTIME_CONFIG.model}`;
-
-    console.log(`[realtime] Connecting to ${OPENAI_REALTIME_CONFIG.model}...`);
+    console.log(`[realtime] Connecting to ${OPENAI_REALTIME_CONFIG.model} (target=${this.target})...`);
 
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(url, {
-        headers: {
-          Authorization: `Bearer ${config.openai.apiKey}`,
-        },
+        headers: { Authorization: `Bearer ${config.openai.apiKey}` },
       });
 
       const timeout = setTimeout(() => {
@@ -46,35 +49,28 @@ export class OpenAIRealtimeService extends EventEmitter {
       this.ws.on("open", () => {
         clearTimeout(timeout);
         this.isConnected = true;
-        console.log(`[realtime] Connected, configuring session...`);
       });
 
       this.ws.on("message", (data) => {
-        const raw = data.toString();
         try {
-          const event = JSON.parse(raw);
-
-          // Handle session.created to send config
+          const event = JSON.parse(data.toString());
           if (event.type === "session.created") {
             this.configureSession();
             return;
           }
-
-          // Session is ready after update
           if (event.type === "session.updated") {
-            console.log(`[realtime] Session ready: ${this.source} -> ${this.target}`);
+            console.log(`[realtime] Session ready → ${this.target}`);
             this.emit("connected");
             resolve();
             return;
           }
-
           this.handleMessage(event);
         } catch {
           this.emit("error", new Error("Failed to parse realtime message"));
         }
       });
 
-      this.ws.on("close", (code, reason) => {
+      this.ws.on("close", (code) => {
         console.log(`[realtime] Closed: ${code}`);
         this.isConnected = false;
         this.emit("disconnected");
@@ -90,30 +86,28 @@ export class OpenAIRealtimeService extends EventEmitter {
   }
 
   private configureSession(): void {
-    const sourceName = getLanguageName(this.source);
     const targetName = getLanguageName(this.target);
-    // ISO 639-1 code for Whisper language hint
-    const sourceCode = this.source;
 
-    // GA Realtime API format
     this.send({
       type: "session.update",
       session: {
         type: "realtime",
         instructions: `You are a real-time translator for Nokia business meetings.
 
-IMPORTANT: The speaker is speaking in ${sourceName} (language code: ${sourceCode}).
-Translate ALL speech from ${sourceName} to ${targetName}.
-Output ONLY the ${targetName} translation. Do not output the original text.
-Do not add explanations, greetings, or commentary.
-Preserve Nokia-specific product names and telecom terminology without translation.
-If you cannot understand what was said, output "[unclear]" in ${targetName}.`,
+Your task: translate the speech you hear into ${targetName} (language code: ${this.target}).
+
+CRITICAL RULES:
+1. If the spoken language is ALREADY ${targetName}, produce NO audio output and NO text response. Stay completely silent.
+2. Otherwise, translate the speech accurately to ${targetName}.
+3. Output ONLY the ${targetName} translation. Do not add greetings, commentary, or explanations.
+4. Preserve Nokia-specific product names, people names, and telecom terminology without translating them.
+5. If you cannot understand the speech, output "[unclear]" in ${targetName}.`,
         audio: {
           input: {
             format: { type: "audio/pcm", rate: 24000 },
             transcription: {
               model: "whisper-1",
-              language: sourceCode,
+              // no language hint — let Whisper auto-detect per turn
             },
             turn_detection: {
               type: "server_vad",
@@ -134,84 +128,95 @@ If you cannot understand what was said, output "[unclear]" in ${targetName}.`,
 
   sendAudio(pcmData: Buffer): void {
     if (!this.isConnected || !this.ws) return;
-
-    const base64Audio = pcmData.toString("base64");
     this.send({
       type: "input_audio_buffer.append",
-      audio: base64Audio,
+      audio: pcmData.toString("base64"),
     });
+  }
+
+  private ensureTurnId(): string {
+    if (!this.currentTurnId) {
+      this.currentTurnId = randomUUID();
+      this.currentTurnEmittedOutput = false;
+    }
+    return this.currentTurnId;
   }
 
   private handleMessage(event: Record<string, any>): void {
     switch (event.type) {
-      // Original speech transcription
+      case "input_audio_buffer.speech_started":
+        // New turn boundary
+        this.currentTurnId = randomUUID();
+        this.currentTurnEmittedOutput = false;
+        break;
+
       case "conversation.item.input_audio_transcription.delta":
-        this.emit("original_transcript", event.delta ?? "", false);
+        this.emit("transcript", this.ensureTurnId(), event.delta ?? "", false);
         break;
 
       case "conversation.item.input_audio_transcription.completed":
-        this.emit("original_transcript", event.transcript ?? "", true);
+        this.emit("transcript", this.ensureTurnId(), event.transcript ?? "", true);
         break;
 
-      // Translation text streaming (GA API uses "output_audio_transcript")
       case "response.output_audio_transcript.delta":
-        this.emit("translated_text", event.delta ?? "", false);
-        break;
-
-      case "response.output_audio_transcript.done":
-        this.emit("translated_text", event.transcript ?? "", true);
-        break;
-
-      // Also handle older event names as fallback
       case "response.audio_transcript.delta":
-        this.emit("translated_text", event.delta ?? "", false);
-        break;
-
-      case "response.audio_transcript.done":
-        this.emit("translated_text", event.transcript ?? "", true);
-        break;
-
-      // Translated audio streaming (GA API uses "output_audio")
-      case "response.output_audio.delta":
-      case "response.audio.delta":
         if (event.delta) {
-          const audioBuffer = Buffer.from(event.delta, "base64");
-          this.emit("translated_audio", audioBuffer);
+          this.currentTurnEmittedOutput = true;
+          this.emit("translated_text", this.ensureTurnId(), event.delta, false);
         }
         break;
 
+      case "response.output_audio_transcript.done":
+      case "response.audio_transcript.done":
+        if (event.transcript) {
+          this.currentTurnEmittedOutput = true;
+          this.emit("translated_text", this.ensureTurnId(), event.transcript, true);
+        }
+        break;
+
+      case "response.output_audio.delta":
+      case "response.audio.delta":
+        if (event.delta) {
+          this.currentTurnEmittedOutput = true;
+          const audioBuffer = Buffer.from(event.delta, "base64");
+          this.emit("translated_audio", this.ensureTurnId(), audioBuffer);
+        }
+        break;
+
+      case "response.done": {
+        const turnId = this.currentTurnId;
+        if (turnId && !this.currentTurnEmittedOutput) {
+          this.emit("turn_skipped", turnId, "same_language");
+        }
+        // Reset for next turn — next speech_started will mint a new id
+        this.currentTurnId = null;
+        this.currentTurnEmittedOutput = false;
+        break;
+      }
+
       case "error":
         console.error(`[realtime] API error:`, event.error?.message);
-        this.emit(
-          "error",
-          new Error(event.error?.message ?? "Unknown realtime error"),
-        );
+        this.emit("error", new Error(event.error?.message ?? "Unknown realtime error"));
         break;
 
       case "response.created":
-        console.log(`[realtime] ${event.type}:`, JSON.stringify(event).slice(0, 300));
-        break;
-      case "response.done":
-        console.log(`[realtime] ${event.type}:`, JSON.stringify(event).slice(0, 500));
-        break;
       case "response.output_item.added":
       case "response.output_item.done":
       case "response.content_part.added":
       case "response.content_part.done":
       case "response.audio.done":
       case "response.output_audio.done":
-      case "input_audio_buffer.speech_started":
       case "input_audio_buffer.speech_stopped":
       case "input_audio_buffer.committed":
       case "conversation.item.created":
       case "conversation.item.added":
       case "conversation.item.done":
       case "rate_limits.updated":
-        console.log(`[realtime] ${event.type}`);
+        // Tracked but not surfaced
         break;
 
       default:
-        console.log(`[realtime] unhandled: ${event.type}`, JSON.stringify(event).slice(0, 500));
+        console.log(`[realtime] unhandled: ${event.type}`);
     }
   }
 

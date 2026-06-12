@@ -3,26 +3,29 @@ import type {
   ClientMessage,
   ServerMessage,
   LanguageCode,
-  StreamDirection,
 } from "@orka/shared";
 
-export interface ConversationState {
+export interface Turn {
+  turnId: string;
+  originalText: string;
+  translatedText: string;
+  skipped: boolean; // true if same-language passthrough
+  originalFinal: boolean;
+  translatedFinal: boolean;
+  startedAt: number;
+}
+
+export interface ListenerState {
   isConnected: boolean;
   isActive: boolean;
   sessionId: string | null;
-  /** What I said (my language) */
-  outgoingOriginal: string;
-  /** What I said translated (their language) */
-  outgoingTranslated: string;
-  /** What they said (their language) */
-  incomingOriginal: string;
-  /** What they said translated (my language) */
-  incomingTranslated: string;
+  targetLanguage: LanguageCode | null;
+  turns: Turn[];
   error: string | null;
 }
 
-interface ConversationCallbacks {
-  onTranslatedAudio?: (stream: StreamDirection, pcmData: ArrayBuffer) => void;
+interface ListenerCallbacks {
+  onTranslatedAudio?: (turnId: string, pcmData: ArrayBuffer) => void;
 }
 
 // Global WebSocket singleton — survives React StrictMode
@@ -30,7 +33,11 @@ let globalWs: WebSocket | null = null;
 let globalListeners: ((msg: ServerMessage) => void)[] = [];
 
 function getOrCreateWs(): WebSocket {
-  if (globalWs && (globalWs.readyState === WebSocket.OPEN || globalWs.readyState === WebSocket.CONNECTING)) {
+  if (
+    globalWs &&
+    (globalWs.readyState === WebSocket.OPEN ||
+      globalWs.readyState === WebSocket.CONNECTING)
+  ) {
     return globalWs;
   }
 
@@ -42,23 +49,19 @@ function getOrCreateWs(): WebSocket {
   globalWs = ws;
 
   ws.onopen = () => console.log("[orka] WebSocket OPEN");
-
   ws.onmessage = (event) => {
     try {
       const msg: ServerMessage = JSON.parse(event.data);
-      console.log("[orka] <<", msg.type, "stream" in msg ? (msg as any).stream : "");
       globalListeners.forEach((fn) => fn(msg));
     } catch (err) {
       console.error("[orka] Parse error:", err);
     }
   };
-
   ws.onclose = (e) => {
     console.log("[orka] WebSocket CLOSED:", e.code);
     globalWs = null;
     setTimeout(() => getOrCreateWs(), 3000);
   };
-
   ws.onerror = () => console.error("[orka] WebSocket ERROR");
 
   return ws;
@@ -74,26 +77,30 @@ function wsSend(msg: ClientMessage): boolean {
   return false;
 }
 
-export function useConversationSocket(callbacks?: ConversationCallbacks) {
-  const [state, setState] = useState<ConversationState>({
+function newEmptyTurn(turnId: string): Turn {
+  return {
+    turnId,
+    originalText: "",
+    translatedText: "",
+    skipped: false,
+    originalFinal: false,
+    translatedFinal: false,
+    startedAt: Date.now(),
+  };
+}
+
+export function useListenerSocket(callbacks?: ListenerCallbacks) {
+  const [state, setState] = useState<ListenerState>({
     isConnected: false,
     isActive: false,
     sessionId: null,
-    outgoingOriginal: "",
-    outgoingTranslated: "",
-    incomingOriginal: "",
-    incomingTranslated: "",
+    targetLanguage: null,
+    turns: [],
     error: null,
   });
 
   const callbacksRef = useRef(callbacks);
   callbacksRef.current = callbacks;
-
-  // Text accumulators
-  const outOrigRef = useRef("");
-  const outTransRef = useRef("");
-  const inOrigRef = useRef("");
-  const inTransRef = useRef("");
 
   useEffect(() => {
     const ws = getOrCreateWs();
@@ -102,53 +109,65 @@ export function useConversationSocket(callbacks?: ConversationCallbacks) {
       setState((prev) => ({ ...prev, isConnected: true }));
     }
 
-    const onOpen = () => setState((prev) => ({ ...prev, isConnected: true, error: null }));
-    const onClose = () => setState((prev) => ({ ...prev, isConnected: false, isActive: false }));
+    const onOpen = () =>
+      setState((prev) => ({ ...prev, isConnected: true, error: null }));
+    const onClose = () =>
+      setState((prev) => ({ ...prev, isConnected: false, isActive: false }));
 
     ws.addEventListener("open", onOpen);
     ws.addEventListener("close", onClose);
 
+    function upsertTurn(
+      turnId: string,
+      mutate: (turn: Turn) => Turn,
+    ): void {
+      setState((prev) => {
+        const idx = prev.turns.findIndex((t) => t.turnId === turnId);
+        if (idx === -1) {
+          return {
+            ...prev,
+            turns: [...prev.turns, mutate(newEmptyTurn(turnId))],
+          };
+        }
+        const updated = [...prev.turns];
+        updated[idx] = mutate(updated[idx]);
+        return { ...prev, turns: updated };
+      });
+    }
+
     function handleMessage(message: ServerMessage) {
       switch (message.type) {
-        case "conversation_ready":
-          console.log("[orka] Conversation ready!");
+        case "session_ready":
+          console.log("[orka] Session ready, target =", message.targetLanguage);
           setState((prev) => ({
             ...prev,
             isActive: true,
             sessionId: message.sessionId,
+            targetLanguage: message.targetLanguage,
+            turns: [],
             error: null,
           }));
           break;
 
-        case "transcript": {
-          const ref = message.stream === "outgoing" ? outOrigRef : inOrigRef;
-          const field = message.stream === "outgoing" ? "outgoingOriginal" : "incomingOriginal";
-          if (message.isFinal) {
-            ref.current += (ref.current ? "\n" : "") + message.text;
-          }
-          setState((prev) => ({
-            ...prev,
-            [field]: message.isFinal
-              ? ref.current
-              : ref.current + (ref.current ? "\n" : "") + message.text,
+        case "transcript":
+          upsertTurn(message.turnId, (turn) => ({
+            ...turn,
+            originalText: message.isFinal
+              ? message.text
+              : (turn.originalText || "") + message.text,
+            originalFinal: message.isFinal,
           }));
           break;
-        }
 
-        case "translated_text": {
-          const ref = message.stream === "outgoing" ? outTransRef : inTransRef;
-          const field = message.stream === "outgoing" ? "outgoingTranslated" : "incomingTranslated";
-          if (message.isFinal) {
-            ref.current += (ref.current ? "\n" : "") + message.text;
-          }
-          setState((prev) => ({
-            ...prev,
-            [field]: message.isFinal
-              ? ref.current
-              : ref.current + (ref.current ? "\n" : "") + message.text,
+        case "translated_text":
+          upsertTurn(message.turnId, (turn) => ({
+            ...turn,
+            translatedText: message.isFinal
+              ? message.text
+              : (turn.translatedText || "") + message.text,
+            translatedFinal: message.isFinal,
           }));
           break;
-        }
 
         case "translated_audio":
           if (callbacksRef.current?.onTranslatedAudio) {
@@ -157,8 +176,19 @@ export function useConversationSocket(callbacks?: ConversationCallbacks) {
             for (let i = 0; i < binary.length; i++) {
               bytes[i] = binary.charCodeAt(i);
             }
-            callbacksRef.current.onTranslatedAudio(message.stream, bytes.buffer);
+            callbacksRef.current.onTranslatedAudio(
+              message.turnId,
+              bytes.buffer,
+            );
           }
+          break;
+
+        case "turn_skipped":
+          upsertTurn(message.turnId, (turn) => ({
+            ...turn,
+            skipped: true,
+            translatedFinal: true,
+          }));
           break;
 
         case "error":
@@ -188,46 +218,31 @@ export function useConversationSocket(callbacks?: ConversationCallbacks) {
     };
   }, []);
 
-  const startConversation = useCallback(
-    (myLanguage: LanguageCode, theirLanguage: LanguageCode, useFallback = false) => {
-      // Clear accumulators
-      outOrigRef.current = "";
-      outTransRef.current = "";
-      inOrigRef.current = "";
-      inTransRef.current = "";
-      setState((prev) => ({
-        ...prev,
-        outgoingOriginal: "",
-        outgoingTranslated: "",
-        incomingOriginal: "",
-        incomingTranslated: "",
-      }));
-
-      console.log(`[orka] >> start_conversation ${myLanguage} ↔ ${theirLanguage}`);
-      wsSend({ type: "start_conversation", myLanguage, theirLanguage, useFallback });
-    },
-    [],
-  );
-
-  const stopConversation = useCallback(() => {
-    console.log("[orka] >> stop_translation");
-    wsSend({ type: "stop_translation" });
+  const startListening = useCallback((targetLanguage: LanguageCode) => {
+    setState((prev) => ({ ...prev, turns: [] }));
+    console.log(`[orka] >> start_listening ${targetLanguage}`);
+    wsSend({ type: "start_listening", targetLanguage });
   }, []);
 
-  const sendAudio = useCallback((stream: StreamDirection, pcmData: ArrayBuffer) => {
+  const stopListening = useCallback(() => {
+    console.log("[orka] >> stop_listening");
+    wsSend({ type: "stop_listening" });
+  }, []);
+
+  const sendAudio = useCallback((pcmData: ArrayBuffer) => {
     const bytes = new Uint8Array(pcmData);
     let binary = "";
     for (let i = 0; i < bytes.length; i++) {
       binary += String.fromCharCode(bytes[i]);
     }
     const base64 = btoa(binary);
-    wsSend({ type: "audio_chunk", stream, data: base64 });
+    wsSend({ type: "audio_chunk", data: base64 });
   }, []);
 
   return {
     ...state,
-    startConversation,
-    stopConversation,
+    startListening,
+    stopListening,
     sendAudio,
   };
 }

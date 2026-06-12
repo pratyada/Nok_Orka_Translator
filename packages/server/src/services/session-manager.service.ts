@@ -1,19 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type { LanguageCode } from "@orka/shared";
 import { OpenAIRealtimeService } from "./openai-realtime.service.js";
-import { FallbackPipelineService } from "./fallback-pipeline.service.js";
 
 export interface TranslationSession {
   id: string;
-  source: LanguageCode;
   target: LanguageCode;
-  engine: "realtime" | "fallback";
-  service: OpenAIRealtimeService | FallbackPipelineService;
+  service: OpenAIRealtimeService;
   startedAt: Date;
 }
 
 /**
- * Manages active translation sessions.
+ * Tracks active multi-party translation sessions for health/metrics.
  * Each WebSocket client gets one session at a time.
  */
 export class SessionManager {
@@ -21,46 +18,16 @@ export class SessionManager {
 
   async createSession(
     clientId: string,
-    source: LanguageCode,
     target: LanguageCode,
-    useFallback = false,
   ): Promise<TranslationSession> {
-    // End any existing session for this client
     await this.endSession(clientId);
 
-    const sessionId = randomUUID();
-    let service: OpenAIRealtimeService | FallbackPipelineService;
-    let engine: "realtime" | "fallback";
-
-    if (useFallback) {
-      service = new FallbackPipelineService(source, target);
-      engine = "fallback";
-    } else {
-      service = new OpenAIRealtimeService(source, target);
-      engine = "realtime";
-    }
-
-    try {
-      await service.connect();
-    } catch (err) {
-      // If realtime fails, fall back automatically
-      if (!useFallback && engine === "realtime") {
-        console.warn(
-          `[session] Realtime API failed, falling back to pipeline: ${err}`,
-        );
-        service = new FallbackPipelineService(source, target);
-        engine = "fallback";
-        await service.connect();
-      } else {
-        throw err;
-      }
-    }
+    const service = new OpenAIRealtimeService(target);
+    await service.connect();
 
     const session: TranslationSession = {
-      id: sessionId,
-      source,
+      id: randomUUID(),
       target,
-      engine,
       service,
       startedAt: new Date(),
     };

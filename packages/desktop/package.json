@@ -23,21 +23,29 @@
   "build": {
     "appId": "com.nokia.orka-translator",
     "productName": "Nokia Orka Translator",
+    "afterPack": "./afterPack.cjs",
     "directories": {
       "output": "dist"
     },
     "files": [
       "src/**/*",
-      "assets/**/*"
+      "assets/**/*",
+      "afterPack.cjs"
     ],
     "extraResources": [
       {
         "from": "bundle/server",
-        "to": "server"
+        "to": "server",
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "bundle/webapp",
-        "to": "webapp"
+        "to": "webapp",
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "bundle/.env",

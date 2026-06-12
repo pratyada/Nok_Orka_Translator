@@ -1,20 +1,19 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket as WsSocket } from "ws";
 import { randomUUID } from "node:crypto";
-import type { ClientMessage, ServerMessage, StreamDirection } from "@orka/shared";
+import type { ClientMessage, ServerMessage } from "@orka/shared";
 import { isValidLanguage } from "@orka/shared";
 import { OpenAIRealtimeService } from "../services/openai-realtime.service.js";
 import { SessionManager } from "../services/session-manager.service.js";
 
 const sessionManager = new SessionManager();
 
-interface ConversationSession {
+interface ListenerSession {
   id: string;
-  outgoing: OpenAIRealtimeService; // my mic → their language
-  incoming: OpenAIRealtimeService; // their voice → my language
+  realtime: OpenAIRealtimeService;
 }
 
-const conversations = new Map<string, ConversationSession>();
+const sessions = new Map<string, ListenerSession>();
 
 export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get(
@@ -28,7 +27,7 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
         try {
           const message: ClientMessage = JSON.parse(raw.toString());
           await handleClientMessage(clientId, socket, message, fastify);
-        } catch (err) {
+        } catch {
           sendMessage(socket, {
             type: "error",
             code: "INVALID_MESSAGE",
@@ -39,7 +38,7 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
 
       socket.on("close", async () => {
         fastify.log.info({ clientId }, "Client disconnected");
-        await endConversation(clientId);
+        await endSession(clientId);
       });
 
       socket.on("error", (err) => {
@@ -49,8 +48,8 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   fastify.addHook("onClose", async () => {
-    for (const [clientId] of conversations) {
-      await endConversation(clientId);
+    for (const [clientId] of sessions) {
+      await endSession(clientId);
     }
     await sessionManager.shutdown();
   });
@@ -63,57 +62,35 @@ async function handleClientMessage(
   fastify: FastifyInstance,
 ): Promise<void> {
   switch (message.type) {
-    case "start_conversation": {
-      console.log(`[ws] start_conversation: ${message.myLanguage} ↔ ${message.theirLanguage}`);
+    case "start_listening": {
+      console.log(`[ws] start_listening: target=${message.targetLanguage}`);
 
-      if (!isValidLanguage(message.myLanguage) || !isValidLanguage(message.theirLanguage)) {
+      if (!isValidLanguage(message.targetLanguage)) {
         sendMessage(socket, {
           type: "error",
           code: "INVALID_LANGUAGE",
-          message: `Unsupported language pair`,
+          message: `Unsupported target language: ${message.targetLanguage}`,
         });
         return;
       }
 
       try {
-        // End any existing conversation
-        await endConversation(clientId);
+        await endSession(clientId);
 
-        // Create two OpenAI Realtime sessions:
-        // 1. Outgoing: my mic (myLanguage) → translate to theirLanguage
-        const outgoing = new OpenAIRealtimeService(message.myLanguage, message.theirLanguage);
+        const realtime = new OpenAIRealtimeService(message.targetLanguage);
+        wireEvents(realtime, socket, fastify);
+        await realtime.connect();
 
-        // 2. Incoming: their voice (theirLanguage) → translate to myLanguage
-        const incoming = new OpenAIRealtimeService(message.theirLanguage, message.myLanguage);
-
-        // Wire outgoing events (what I say → translated for them)
-        wireStream(outgoing, socket, "outgoing", fastify);
-
-        // Wire incoming events (what they say → translated for me)
-        wireStream(incoming, socket, "incoming", fastify);
-
-        // Connect outgoing first
-        await outgoing.connect();
-        console.log(`[ws] Outgoing stream ready: ${message.myLanguage} → ${message.theirLanguage}`);
-
-        // Connect incoming
-        await incoming.connect();
-        console.log(`[ws] Incoming stream ready: ${message.theirLanguage} → ${message.myLanguage}`);
-
-        conversations.set(clientId, {
-          id: randomUUID(),
-          outgoing,
-          incoming,
-        });
+        const sessionId = randomUUID();
+        sessions.set(clientId, { id: sessionId, realtime });
 
         sendMessage(socket, {
-          type: "conversation_ready",
-          sessionId: conversations.get(clientId)!.id,
-          myLanguage: message.myLanguage,
-          theirLanguage: message.theirLanguage,
+          type: "session_ready",
+          sessionId,
+          targetLanguage: message.targetLanguage,
         });
       } catch (err) {
-        fastify.log.error({ clientId, err }, "Failed to start conversation");
+        fastify.log.error({ clientId, err }, "Failed to start session");
         sendMessage(socket, {
           type: "error",
           code: "SESSION_START_FAILED",
@@ -123,66 +100,66 @@ async function handleClientMessage(
       break;
     }
 
-    case "stop_translation": {
-      await endConversation(clientId);
+    case "stop_listening": {
+      const sess = sessions.get(clientId);
+      const sessionId = sess?.id ?? clientId;
+      await endSession(clientId);
       sendMessage(socket, {
         type: "session_ended",
-        sessionId: clientId,
+        sessionId,
         durationMs: 0,
       });
       break;
     }
 
     case "audio_chunk": {
-      const conv = conversations.get(clientId);
-      if (!conv) {
+      const sess = sessions.get(clientId);
+      if (!sess) {
         sendMessage(socket, {
           type: "error",
           code: "NO_SESSION",
-          message: "No active conversation. Send start_conversation first.",
+          message: "No active session. Send start_listening first.",
         });
         return;
       }
-
-      const audioBuffer = Buffer.from(message.data, "base64");
-      const stream = message.stream;
-
-      // Route audio to the correct OpenAI session
-      if (stream === "outgoing") {
-        conv.outgoing.sendAudio(audioBuffer);
-      } else if (stream === "incoming") {
-        conv.incoming.sendAudio(audioBuffer);
-      }
+      sess.realtime.sendAudio(Buffer.from(message.data, "base64"));
       break;
     }
   }
 }
 
-function wireStream(
+function wireEvents(
   service: OpenAIRealtimeService,
   socket: WsSocket,
-  stream: StreamDirection,
   fastify: FastifyInstance,
 ): void {
-  service.on("original_transcript", (text, isFinal) => {
-    sendMessage(socket, { type: "transcript", stream, text, isFinal });
+  service.on("transcript", (turnId: string, text: string, isFinal: boolean) => {
+    sendMessage(socket, { type: "transcript", turnId, text, isFinal });
   });
 
-  service.on("translated_text", (text, isFinal) => {
-    sendMessage(socket, { type: "translated_text", stream, text, isFinal });
+  service.on("translated_text", (turnId: string, text: string, isFinal: boolean) => {
+    sendMessage(socket, { type: "translated_text", turnId, text, isFinal });
   });
 
-  service.on("translated_audio", (audioData) => {
+  service.on("translated_audio", (turnId: string, audioData: Buffer) => {
     sendMessage(socket, {
       type: "translated_audio",
-      stream,
+      turnId,
       data: audioData.toString("base64"),
       format: "pcm",
     });
   });
 
-  service.on("error", (err) => {
-    fastify.log.error({ stream, err: err.message }, "Translation error");
+  service.on("turn_skipped", (turnId: string, reason: "same_language") => {
+    sendMessage(socket, {
+      type: "turn_skipped",
+      turnId,
+      reason,
+    });
+  });
+
+  service.on("error", (err: Error) => {
+    fastify.log.error({ err: err.message }, "Translation error");
     sendMessage(socket, {
       type: "error",
       code: "TRANSLATION_ERROR",
@@ -191,12 +168,11 @@ function wireStream(
   });
 }
 
-async function endConversation(clientId: string): Promise<void> {
-  const conv = conversations.get(clientId);
-  if (conv) {
-    await conv.outgoing.disconnect();
-    await conv.incoming.disconnect();
-    conversations.delete(clientId);
+async function endSession(clientId: string): Promise<void> {
+  const sess = sessions.get(clientId);
+  if (sess) {
+    await sess.realtime.disconnect();
+    sessions.delete(clientId);
   }
 }
 

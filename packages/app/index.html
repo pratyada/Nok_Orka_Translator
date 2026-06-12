@@ -7,10 +7,208 @@
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body { font-family: 'Segoe UI', system-ui, sans-serif; }
+
+      /* Bottom-right hyperlinks */
+      .dev-links {
+        position: fixed;
+        bottom: 6px;
+        right: 10px;
+        z-index: 9999;
+        font-size: 11px;
+        color: #5b6478;
+        background: rgba(255, 255, 255, 0.85);
+        padding: 2px 8px;
+        border-radius: 10px;
+        backdrop-filter: blur(4px);
+        user-select: none;
+      }
+      .dev-links a {
+        color: #124191;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .dev-links a:hover { text-decoration: underline; }
+      .dev-links .sep { margin: 0 5px; opacity: 0.5; }
+
+      /* Modal */
+      .dev-modal {
+        border: none;
+        border-radius: 8px;
+        padding: 0;
+        max-width: 640px;
+        width: 90vw;
+        max-height: 80vh;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      }
+      .dev-modal::backdrop { background: rgba(0, 0, 0, 0.4); }
+      .dev-modal-header {
+        background: #124191;
+        color: #ffffff;
+        padding: 10px 16px;
+        font-size: 14px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .dev-modal-close {
+        background: none;
+        border: none;
+        color: #ffffff;
+        font-size: 18px;
+        cursor: pointer;
+        padding: 0 4px;
+      }
+      .dev-modal-content {
+        padding: 14px 18px;
+        font-size: 13px;
+        color: #1a1a1a;
+        line-height: 1.5;
+        max-height: calc(80vh - 50px);
+        overflow-y: auto;
+      }
+      .dev-modal-content h3 {
+        margin: 10px 0 4px;
+        font-size: 13px;
+        color: #124191;
+      }
+      .dev-modal-content h3:first-child { margin-top: 0; }
+      .dev-modal-content ol, .dev-modal-content ul {
+        margin: 4px 0 8px 20px;
+      }
+      .dev-modal-content li { margin-bottom: 4px; }
+      .dev-modal-content code {
+        background: #eef1f8;
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-family: Consolas, 'Courier New', monospace;
+        font-size: 12px;
+        color: #124191;
+      }
+      .dev-modal-content pre {
+        background: #1e1e1e;
+        color: #e0e0e0;
+        padding: 8px 10px;
+        border-radius: 4px;
+        font-family: Consolas, 'Courier New', monospace;
+        font-size: 11px;
+        overflow-x: auto;
+        margin: 4px 0 8px;
+        white-space: pre-wrap;
+      }
+      .dev-modal-content .meta {
+        color: #5b6478;
+        font-size: 11px;
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px dashed #d6def0;
+      }
     </style>
   </head>
   <body>
     <div id="root"></div>
+
+    <div class="dev-links">
+      <a onclick="document.getElementById('dev-notes-modal').showModal()">Dev Notes</a>
+      <span class="sep">&middot;</span>
+      <a onclick="document.getElementById('guide-modal').showModal()">Setup Guide</a>
+    </div>
+
+    <dialog id="dev-notes-modal" class="dev-modal">
+      <div class="dev-modal-header">
+        <span>Dev Notes</span>
+        <button class="dev-modal-close" onclick="this.closest('dialog').close()">&times;</button>
+      </div>
+      <div class="dev-modal-content">
+        <h3>Multi-party rewrite &mdash; 2026-06-11</h3>
+        <p>The app was redesigned from a 1-to-1 "I speak / They speak" pair into a multi-party listen-only translator. Each participant runs the app on their own laptop, picks the language they want to hear, and the app translates everything coming through Teams audio into that language. If a speaker is already speaking the listener's language, no translation is produced.</p>
+        <h3>Key architecture changes</h3>
+        <ol>
+          <li><b>One Realtime session per client</b>, not two. The "outgoing" mic path is removed entirely &mdash; your own voice is translated by everyone else's app.</li>
+          <li><b>Whisper auto-detects language</b> per turn. The session prompt tells the model to translate to a single target and to stay silent when input is already in target.</li>
+          <li><b>Single chronological transcript pane</b> replaces the two-column "What I Say / What They Say" layout.</li>
+          <li><b>Feedback-loop suppression</b> in <code>useAudioCapture</code>: system-audio chunks are dropped while <code>AudioPlayer</code> is actively playing translated output. Breaks the Windows render-loopback &rarr; capture &rarr; retranslate echo.</li>
+        </ol>
+        <h3>Known limitations</h3>
+        <ul>
+          <li>Audio mixing is naive &mdash; user hears the original Teams audio AND the translated overlay simultaneously. Use Teams' captions-only or reduce Teams volume during demos.</li>
+          <li>Same-language detection is fully delegated to the model. If it doesn't follow the "stay silent" instruction perfectly you may occasionally get a redundant English-to-English passthrough.</li>
+          <li>The "turn_skipped" event is inferred from <code>response.done</code> producing no audio output &mdash; works in practice but not provably airtight.</li>
+        </ul>
+        <h3>Earlier Windows packaging fixes (still relevant for next builds)</h3>
+        <ul>
+          <li>Server's runtime <code>node_modules</code> must be bundled into <code>resources/server/</code> by electron-builder.</li>
+          <li><code>@orka/shared</code>'s <code>main</code> field must point at the built file, with explicit named re-exports (TS's <code>__exportStar</code> isn't statically detectable by Node's CJS lexer).</li>
+          <li><code>waitForServer</code> retry budget bumped from 30 to 120 for cold-start.</li>
+          <li><code>.env</code> shipped without <code>NODE_ENV=development</code>; the production default in <code>main.js</code> wins.</li>
+        </ul>
+      </div>
+    </dialog>
+
+    <dialog id="guide-modal" class="dev-modal">
+      <div class="dev-modal-header">
+        <span>Setup Guide &mdash; Nokia Personnel</span>
+        <button class="dev-modal-close" onclick="this.closest('dialog').close()">&times;</button>
+      </div>
+      <div class="dev-modal-content">
+        <h3>Prerequisites</h3>
+        <ul>
+          <li>Windows 10 or 11 (x64).</li>
+          <li>An <b>OpenAI API key</b> with access to the Realtime API. Ask Pratyada if you don't have one.</li>
+          <li>No Node.js install required &mdash; the runtime is bundled.</li>
+        </ul>
+
+        <h3>1. Get the app</h3>
+        <ol>
+          <li>Copy the installer/zip provided by Pratyada to your laptop.</li>
+          <li>Extract or run the installer.</li>
+        </ol>
+
+        <h3>2. Configure your API key</h3>
+        <ol>
+          <li>Locate the app folder (next to <code>Nokia Orka Translator.exe</code>) and open <code>.env</code> in Notepad.</li>
+          <li>Replace the value after <code>OPENAI_API_KEY=</code> with your own key.</li>
+          <li>Save and close.</li>
+        </ol>
+        <pre>OPENAI_API_KEY=sk-proj-...your-key-here...
+ANTHROPIC_API_KEY=
+DEEPGRAM_API_KEY=
+PORT=3001
+NODE_ENV=production</pre>
+
+        <h3>3. Run it</h3>
+        <ol>
+          <li>Double-click <code>Nokia Orka Translator.exe</code>.</li>
+          <li>First launch takes ~5&ndash;10 seconds to start the embedded server.</li>
+          <li>Allow microphone / screen-share access when Windows prompts (needed for system-audio capture).</li>
+          <li>The app pins to the system tray. Right-click to quit fully.</li>
+        </ol>
+
+        <h3>4. Using it in a multi-party meeting</h3>
+        <ul>
+          <li>Each participant runs the app on their own laptop and picks the language they want to hear.</li>
+          <li>Pick your target from the <b>"I want to hear in"</b> dropdown.</li>
+          <li>Click <b>Start Listening</b>. The app starts capturing Teams audio.</li>
+          <li>Whenever someone speaks a language different from yours, you'll see the original transcript and hear the translation in your speakers/headphones.</li>
+          <li>When someone speaks your language, the row is marked <i>"already in your language &mdash; no translation needed"</i> and stays silent.</li>
+          <li><b>Use headphones</b> if you can &mdash; reduces audio bleed between Teams and the translator.</li>
+        </ul>
+
+        <h3>5. Troubleshooting</h3>
+        <ul>
+          <li><b>No translation appearing:</b> check your OpenAI key and network. Verify <code>NODE_ENV=production</code> in <code>.env</code>.</li>
+          <li><b>"Cannot find server" error:</b> the <code>resources/server/</code> folder is corrupted &mdash; reinstall.</li>
+          <li><b>Port 3001 in use:</b> change <code>PORT=3001</code> in <code>.env</code> and relaunch.</li>
+          <li><b>Antivirus quarantine:</b> Nokia endpoints sometimes block unsigned Electron exes. Add an exclusion for the app folder.</li>
+        </ul>
+
+        <h3>6. Sharing with another colleague</h3>
+        <p>Share the installer/zip Pratyada gave you. The recipient extracts, edits <code>.env</code> with their own key, and double-clicks the exe.</p>
+
+        <div class="meta">Contact: Pratyada &middot; Multi-party build &mdash; 2026-06-11.</div>
+      </div>
+    </dialog>
+
     <script type="module" src="/src/index.tsx"></script>
   </body>
 </html>

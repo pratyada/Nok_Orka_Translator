@@ -20,8 +20,16 @@ const isDesktop = !!(window as any).orkaDesktop?.isDesktop;
  * "system" mode: captures system audio output (what you hear from Teams)
  *   - In Electron: uses desktopCapturer + getDisplayMedia
  *   - In browser: uses getDisplayMedia with audio (Chrome tab audio)
+ *
+ * @param shouldSuppress optional gate — when it returns true, chunks are
+ *   dropped instead of being forwarded. Used to break the
+ *   render-loopback -> capture -> translate -> render feedback loop while
+ *   translated audio is actively playing.
  */
-export function useAudioCapture(onAudioChunk: (chunk: ArrayBuffer) => void) {
+export function useAudioCapture(
+  onAudioChunk: (chunk: ArrayBuffer) => void,
+  shouldSuppress?: () => boolean,
+) {
   const [state, setState] = useState<AudioCaptureState>({
     isCapturing: false,
     error: null,
@@ -49,6 +57,10 @@ export function useAudioCapture(onAudioChunk: (chunk: ArrayBuffer) => void) {
         }
         const rms = Math.sqrt(sum / inputData.length);
         setState((prev) => ({ ...prev, audioLevel: Math.min(rms * 5, 1) }));
+
+        // Suppress chunks while translated audio is playing to break
+        // the render-loopback feedback loop.
+        if (shouldSuppress?.()) return;
 
         // Convert Float32 to Int16 PCM
         const pcm16 = new Int16Array(inputData.length);

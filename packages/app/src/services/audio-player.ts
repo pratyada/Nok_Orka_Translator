@@ -59,4 +59,9 @@ export class AudioPlayer {
       await this.context.resume();
     }
   }
+
+  /** True when audio is actively being rendered to the output device. */
+  get playing(): boolean {
+    return this.isPlaying || this.queue.length > 0;
+  }
 }
