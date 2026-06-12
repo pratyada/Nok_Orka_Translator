@@ -3,8 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "main": "src/main.js",
-  "description": "Nokia Orka Translator - Desktop Application",
-  "author": "Nokia",
+  "description": "Nokia Orka Translator - In-house live translation for Teams meetings",
+  "author": {
+    "name": "Nokia MS - ORKA team",
+    "email": "prateek.yadav@nokia.com"
+  },
   "scripts": {
     "dev": "electron .",
     "build": "bash ../../scripts/build-desktop.sh",
@@ -23,6 +26,7 @@
   "build": {
     "appId": "com.nokia.orka-translator",
     "productName": "Nokia Orka Translator",
+    "copyright": "Copyright (c) 2026 Nokia MS - ORKA team. Contact: prateek.yadav@nokia.com",
     "afterPack": "./afterPack.cjs",
     "directories": {
       "output": "dist"
@@ -49,7 +53,7 @@
       },
       {
         "from": "bundle/.env",
-        "to": ".env"
+        "to": "../.env"
       }
     ],
     "mac": {

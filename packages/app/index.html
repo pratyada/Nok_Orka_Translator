@@ -151,61 +151,72 @@
         <button class="dev-modal-close" onclick="this.closest('dialog').close()">&times;</button>
       </div>
       <div class="dev-modal-content">
-        <h3>Prerequisites</h3>
+        <h3>What this app does</h3>
+        <p>Each participant in a Teams call runs this app locally and picks the language they want to hear in. The app captures meeting audio and translates anything spoken in another language to your chosen language &mdash; both as on-screen text and as audio you hear through your speakers/headphones. If a speaker is already speaking your chosen language, no translation is produced.</p>
+        <p>You only configure <b>your</b> language. Everyone else's translator handles their end.</p>
+
+        <h3>Step 1 &mdash; Copy the zip somewhere sensible</h3>
+        <ol>
+          <li>Save <code>Nokia-Orka-Translator-v0.1-Portable.zip</code> to Documents or anywhere with write access.</li>
+          <li>Right-click the zip &rarr; <b>Extract All&hellip;</b> &rarr; pick a destination.</li>
+          <li>Open the extracted folder. You should see <code>Nokia Orka Translator.exe</code> next to a <code>resources\</code> folder and a <code>.env</code> file.</li>
+        </ol>
+        <p style="color:#5b6478;font-size:12px;"><b>No admin rights needed.</b> The portable build runs from wherever you extract it.</p>
+
+        <h3>Step 2 &mdash; OpenAI API key</h3>
+        <p>The bundled <code>.env</code> already contains a shared team API key &mdash; you don't need to do anything for the POC. Usage is billed centrally to Prateek's account.</p>
+        <p>If you want to use your own key later: open <code>.env</code> in Notepad, replace the value after <code>OPENAI_API_KEY=</code>, save.</p>
+
+        <h3>Step 3 &mdash; First launch</h3>
+        <p>Double-click <code>Nokia Orka Translator.exe</code>. Windows shows a few one-time warnings:</p>
+        <h4 style="font-size:12px;color:#124191;margin-top:8px;">3a. SmartScreen &mdash; "Windows protected your PC"</h4>
+        <ol>
+          <li>Click <b>More info</b> (small link).</li>
+          <li>The dialog expands. Check the publisher reads <i>Nokia MS - ORKA team</i>.</li>
+          <li>Click <b>Run anyway</b>.</li>
+        </ol>
+        <h4 style="font-size:12px;color:#124191;margin-top:8px;">3b. Firewall &mdash; "Allow access"</h4>
+        <ol>
+          <li>Tick <b>Private networks</b>.</li>
+          <li>Click <b>Allow access</b>.</li>
+        </ol>
+        <h4 style="font-size:12px;color:#124191;margin-top:8px;">3c. Microphone permission</h4>
+        <p>When Windows asks "Let Nokia Orka Translator access your microphone?" &mdash; click <b>Yes</b>. The mic permission is needed so the screen-capture API can also surface system audio.</p>
+        <h4 style="font-size:12px;color:#124191;margin-top:8px;">3d. Screen-share pop-up</h4>
+        <p>On first capture, Windows briefly shows a screen-sharing picker. It auto-selects the desktop &mdash; just wait, it disappears on its own.</p>
+
+        <h3>Step 4 &mdash; Use it in a meeting</h3>
+        <ol>
+          <li>Join your Teams call (or play any foreign-language YouTube video to test).</li>
+          <li>Pick your language in the <b>"I want to hear in"</b> dropdown.</li>
+          <li>Click <b>Start Listening</b>.</li>
+          <li>The transcript fills as people speak: italic original, then the translation in your language. Same-language turns show <i>"already in your language &mdash; no translation needed"</i> and stay silent.</li>
+          <li>Click <b>Stop</b> when done.</li>
+        </ol>
+        <p style="color:#5b6478;font-size:12px;">Headphones give the cleanest experience. Speaker playback works but can echo through Teams audio.</p>
+
+        <h3>Step 5 &mdash; When you're done</h3>
         <ul>
-          <li>Windows 10 or 11 (x64).</li>
-          <li>An <b>OpenAI API key</b> with access to the Realtime API. Ask Pratyada if you don't have one.</li>
-          <li>No Node.js install required &mdash; the runtime is bundled.</li>
+          <li>Closing the window <b>hides to the system tray</b> (Nokia-blue square icon).</li>
+          <li>Right-click the tray icon &rarr; <b>Quit</b> to fully exit.</li>
+          <li>To uninstall: delete the extracted folder. That's it.</li>
         </ul>
 
-        <h3>1. Get the app</h3>
-        <ol>
-          <li>Copy the installer/zip provided by Pratyada to your laptop.</li>
-          <li>Extract or run the installer.</li>
-        </ol>
-
-        <h3>2. Configure your API key</h3>
-        <ol>
-          <li>Locate the app folder (next to <code>Nokia Orka Translator.exe</code>) and open <code>.env</code> in Notepad.</li>
-          <li>Replace the value after <code>OPENAI_API_KEY=</code> with your own key.</li>
-          <li>Save and close.</li>
-        </ol>
-        <pre>OPENAI_API_KEY=sk-proj-...your-key-here...
-ANTHROPIC_API_KEY=
-DEEPGRAM_API_KEY=
-PORT=3001
-NODE_ENV=production</pre>
-
-        <h3>3. Run it</h3>
-        <ol>
-          <li>Double-click <code>Nokia Orka Translator.exe</code>.</li>
-          <li>First launch takes ~5&ndash;10 seconds to start the embedded server.</li>
-          <li>Allow microphone / screen-share access when Windows prompts (needed for system-audio capture).</li>
-          <li>The app pins to the system tray. Right-click to quit fully.</li>
-        </ol>
-
-        <h3>4. Using it in a multi-party meeting</h3>
+        <h3>Troubleshooting</h3>
         <ul>
-          <li>Each participant runs the app on their own laptop and picks the language they want to hear.</li>
-          <li>Pick your target from the <b>"I want to hear in"</b> dropdown.</li>
-          <li>Click <b>Start Listening</b>. The app starts capturing Teams audio.</li>
-          <li>Whenever someone speaks a language different from yours, you'll see the original transcript and hear the translation in your speakers/headphones.</li>
-          <li>When someone speaks your language, the row is marked <i>"already in your language &mdash; no translation needed"</i> and stays silent.</li>
-          <li><b>Use headphones</b> if you can &mdash; reduces audio bleed between Teams and the translator.</li>
+          <li><b>Blank window for ~10 sec</b> &mdash; first launch starts the embedded server. Wait.</li>
+          <li><b><code>TRANSLATION_ERROR: Incorrect API key</code></b> &mdash; <code>.env</code> is missing or empty. Check Step 2, fully relaunch.</li>
+          <li><b>"Cannot find server"</b> &mdash; <code>resources\server\</code> folder is corrupted. Re-extract the zip.</li>
+          <li><b>Port 3001 already in use</b> &mdash; edit <code>.env</code>, change to e.g. <code>PORT=3055</code>, relaunch.</li>
+          <li><b>Garbled / repeating translations</b> &mdash; speaker output is bleeding into system-audio capture. Use headphones, or lower Teams volume.</li>
+          <li><b>Antivirus quarantines the exe</b> &mdash; unsigned POC build. Add a folder exclusion or ping Prateek.</li>
         </ul>
 
-        <h3>5. Troubleshooting</h3>
-        <ul>
-          <li><b>No translation appearing:</b> check your OpenAI key and network. Verify <code>NODE_ENV=production</code> in <code>.env</code>.</li>
-          <li><b>"Cannot find server" error:</b> the <code>resources/server/</code> folder is corrupted &mdash; reinstall.</li>
-          <li><b>Port 3001 in use:</b> change <code>PORT=3001</code> in <code>.env</code> and relaunch.</li>
-          <li><b>Antivirus quarantine:</b> Nokia endpoints sometimes block unsigned Electron exes. Add an exclusion for the app folder.</li>
-        </ul>
+        <h3>Questions / bugs</h3>
+        <p><b>Prateek Yadav</b> &mdash; Nokia MS - ORKA team<br/>prateek.yadav@nokia.com</p>
+        <p style="color:#5b6478;font-size:12px;">This is a POC. Report freely &mdash; no escalation needed.</p>
 
-        <h3>6. Sharing with another colleague</h3>
-        <p>Share the installer/zip Pratyada gave you. The recipient extracts, edits <code>.env</code> with their own key, and double-clicks the exe.</p>
-
-        <div class="meta">Contact: Pratyada &middot; Multi-party build &mdash; 2026-06-11.</div>
+        <div class="meta">Multi-party build &mdash; v0.1 &middot; 2026-06-12.</div>
       </div>
     </dialog>
 
