@@ -1,6 +1,6 @@
 {
   "name": "nokia-orka-translator",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Nokia Orka Translator - In-house live translation for Teams meetings",
   "workspaces": [

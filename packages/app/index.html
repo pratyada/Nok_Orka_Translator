@@ -109,10 +109,146 @@
     <div id="root"></div>
 
     <div class="dev-links">
+      <a onclick="document.getElementById('languages-modal').showModal()">Languages Supported</a>
+      <span class="sep">&middot;</span>
+      <a onclick="document.getElementById('arch-modal').showModal()">Architecture &amp; Security</a>
+      <span class="sep">&middot;</span>
       <a onclick="document.getElementById('dev-notes-modal').showModal()">Dev Notes</a>
       <span class="sep">&middot;</span>
       <a onclick="document.getElementById('guide-modal').showModal()">Setup Guide</a>
     </div>
+
+    <dialog id="languages-modal" class="dev-modal">
+      <div class="dev-modal-header">
+        <span>Languages Supported</span>
+        <button class="dev-modal-close" onclick="this.closest('dialog').close()">&times;</button>
+      </div>
+      <div class="dev-modal-content">
+        <h3>Detect vs. translate &mdash; two different numbers</h3>
+        <p>Detection and translation are separate stages, so the counts differ:</p>
+        <ul>
+          <li><b>Detects (spoken language &mdash; automatic): ~99 languages.</b> You never tell the app what language is being spoken. It auto-detects the speaker's language on every turn, so it recognises essentially the full range of languages the speech engine understands.</li>
+          <li><b>Translates into (the "I want to hear in" dropdown): 24 languages.</b> You pick one target; everything spoken in any other language is translated into it.</li>
+        </ul>
+        <p>In practice: <b>someone can speak in almost any language, and you hear it in whichever of the 24 target languages you chose.</b></p>
+
+        <h3>The 24 target languages you can listen in</h3>
+        <table style="border-collapse:collapse;width:100%;font-size:12px;margin:4px 0 8px;">
+          <tbody>
+            <tr>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">English</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Spanish</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">French</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Portuguese</td>
+            </tr>
+            <tr>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">German</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Italian</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Dutch</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Chinese</td>
+            </tr>
+            <tr>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Japanese</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Korean</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Hindi</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Arabic</td>
+            </tr>
+            <tr>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Russian</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Turkish</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Polish</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Swedish</td>
+            </tr>
+            <tr>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Finnish</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Danish</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Norwegian</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Thai</td>
+            </tr>
+            <tr>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Vietnamese</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Indonesian</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Malay</td>
+              <td style="padding:3px 6px;border:1px solid #e6e8ec;">Filipino</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Same-language passthrough</h3>
+        <p>If someone is already speaking your chosen language, no translation is produced &mdash; that turn is marked <i>"already in your language &mdash; no translation needed"</i> and stays silent.</p>
+
+        <p style="color:#5b6478;font-size:12px;">More target languages can be added easily &mdash; the underlying model already supports far more than 24; the dropdown list is simply the curated set enabled for this build.</p>
+
+        <div class="meta">Languages overview &mdash; v1.0.1.</div>
+      </div>
+    </dialog>
+
+    <dialog id="arch-modal" class="dev-modal">
+      <div class="dev-modal-header">
+        <span>Architecture &amp; Security &mdash; how Orka Translator handles your data</span>
+        <button class="dev-modal-close" onclick="this.closest('dialog').close()">&times;</button>
+      </div>
+      <div class="dev-modal-content">
+        <h3>In one sentence</h3>
+        <p>Orka Translator captures the meeting audio playing on your own machine, sends short audio segments to a single external service (the OpenAI API) over an encrypted connection to be transcribed and translated, shows you the result, and then forgets it. It stores nothing, contacts no other service, and never touches your microphone unless you are speaking in the meeting yourself.</p>
+
+        <h3>How a single spoken sentence travels through the system</h3>
+        <pre>  Other participants speak in Teams
+            &darr;  (audio you already hear on your speakers)
+  [1] Local capture        Windows system-audio loopback &rarr; PCM audio in the app
+            &darr;  ws://localhost  (stays on your machine)
+  [2] Local relay          Embedded Node server running inside the app
+            &darr;  wss://api.openai.com   TLS-encrypted
+  [3] OpenAI Realtime API  transcribe (Whisper) + translate + synthesize speech
+            &darr;  wss://  TLS-encrypted
+  [2] Local relay          forwards result back to the app
+            &darr;  ws://localhost
+  [1] Your screen + speakers   translated text + audio
+            &darr;
+        (nothing is written to disk &mdash; the turn exists only in memory)</pre>
+
+        <h3>What leaves your device &mdash; stated plainly</h3>
+        <p>For transparency, here is the one and only thing that leaves your computer: the <b>meeting audio you choose to translate</b> is streamed to the <b>OpenAI API</b>, and the <b>transcript and translation (text and synthesized audio)</b> come back. We are deliberately explicit about this because it is the part a security review must assess.</p>
+        <ul>
+          <li><b>Destination:</b> <code>api.openai.com</code> only. No analytics, telemetry, ad networks, or any other third party is contacted.</li>
+          <li><b>What is sent:</b> the captured meeting audio, plus the fixed translation instructions. Nothing about your identity, account, machine, or files is sent.</li>
+          <li><b>Encryption in transit:</b> the connection to OpenAI uses TLS (HTTPS/WSS). Audio and text are never sent in clear text over the public internet.</li>
+          <li><b>Microphone:</b> in listen-only mode the app captures <i>system audio output</i> (what you hear), not a direct microphone tap. Your own voice is carried by Teams as normal and translated by <i>other</i> people's apps, not yours.</li>
+        </ul>
+
+        <h3>What never leaves your device</h3>
+        <ul>
+          <li><b>No stored transcripts.</b> Conversations are not written to any database, file, or log. There is no database or cache wired into this build &mdash; each translated turn lives in memory only and is discarded when you stop or close the app.</li>
+          <li><b>No content logging.</b> The local server logs only connection events and an anonymous random session id. Spoken content, transcripts, and translations are <b>never</b> written to the logs.</li>
+          <li><b>Your API key stays local.</b> The key lives in a local <code>.env</code> file, is read only by the local server, and is used solely as the credential to OpenAI. It is never exposed to the user interface or sent anywhere except OpenAI's authentication header.</li>
+          <li><b>No background phone-home.</b> The app does not auto-update, beacon, or transmit anything when idle. It is silent unless you press <b>Start Listening</b>.</li>
+        </ul>
+
+        <h3>Processing &amp; retention at OpenAI</h3>
+        <p>Translation is performed by the OpenAI API. Under OpenAI's API data-usage policy, data sent through the API is <b>not used to train OpenAI models</b>, and is retained only transiently for abuse monitoring before deletion. The exact retention window and any Zero-Data-Retention terms depend on the organisation's OpenAI agreement and should be confirmed by the security team against that contract before production use.</p>
+
+        <h3>Known security considerations (full transparency for review)</h3>
+        <p>Rather than claim the system is flawless, we list the open items so they can be assessed honestly. None of these expose stored data &mdash; they are exposure-surface and hardening items.</p>
+        <ul>
+          <li><b>Local server bind address.</b> The embedded server currently binds to all network interfaces (<code>0.0.0.0:3001</code>), so it is reachable from the local network while running. <i>Planned mitigation:</i> bind to <code>127.0.0.1</code> (loopback only) so it is reachable solely from your own machine.</li>
+          <li><b>API key handling.</b> No secret is embedded in the distributed build &mdash; it ships with an empty <code>.env</code>. Each user receives their <b>own</b> key, issued and revocable centrally (a per-user subscription/seat model), so usage is attributable per person and there is no shared secret to leak. The key is stored in a local plaintext <code>.env</code> on the user's machine. <i>Planned hardening:</i> OS-level secret storage / Entra-issued credentials instead of a plaintext file.</li>
+          <li><b>Unsigned build.</b> The POC executable is not yet code-signed, which is why Windows SmartScreen warns on first launch. <i>Planned:</i> Nokia code-signing certificate for distributed builds.</li>
+          <li><b>Cloud dependency.</b> Translation requires the external OpenAI service; the system is not air-gapped. An on-premise or Nokia-hosted model is a possible future direction if data-residency requires it.</li>
+        </ul>
+
+        <h3>Where this is heading &mdash; security as a built-in feature</h3>
+        <p>The architecture above is deliberately simple and inspectable so that controls can be layered on with confidence. The roadmap treats security as a product feature, not an afterthought:</p>
+        <ul>
+          <li><b>Policy-aware routing.</b> Classify content before it leaves the device and route or redact according to Nokia data-handling policy (e.g. block or mask confidential terms automatically).</li>
+          <li><b>Prescriptive AI guardrails.</b> Use the model itself to flag, in real time, where a conversation may touch sensitive or regulated material &mdash; surfacing &ldquo;this segment looks like it could contain restricted information&rdquo; and suggesting the safer handling, so risk is caught proactively rather than after the fact.</li>
+          <li><b>Configurable data boundaries.</b> Per-deployment switches for retention, region/data-residency, and on-premise model hosting, so each organisation can dial the data boundary to its own compliance bar.</li>
+          <li><b>Audit &amp; consent surfaces.</b> Optional, opt-in audit trails and clear in-meeting consent indicators so participants always know translation is active.</li>
+        </ul>
+        <p style="color:#5b6478;font-size:12px;">The roadmap items above describe <b>intended future direction</b> and are <b>not yet implemented</b> in this POC build. The "in one sentence", data-flow, "what leaves / never leaves", and "known considerations" sections describe the system <b>as it actually behaves today</b>.</p>
+
+        <div class="meta">Architecture &amp; Security overview &mdash; v1.0.1 &middot; prepared for internal security review. Contact: Prateek Yadav, Nokia MS - ORKA team &middot; prateek.yadav@nokia.com</div>
+      </div>
+    </dialog>
 
     <dialog id="dev-notes-modal" class="dev-modal">
       <div class="dev-modal-header">
@@ -157,15 +293,21 @@
 
         <h3>Step 1 &mdash; Copy the zip somewhere sensible</h3>
         <ol>
-          <li>Save <code>Nokia-Orka-Translator-v0.1-Portable.zip</code> to Documents or anywhere with write access.</li>
+          <li>Save <code>Nokia-Orka-Translator-v1.0.1-Portable.zip</code> to Documents or anywhere with write access.</li>
           <li>Right-click the zip &rarr; <b>Extract All&hellip;</b> &rarr; pick a destination.</li>
           <li>Open the extracted folder. You should see <code>Nokia Orka Translator.exe</code> next to a <code>resources\</code> folder and a <code>.env</code> file.</li>
         </ol>
         <p style="color:#5b6478;font-size:12px;"><b>No admin rights needed.</b> The portable build runs from wherever you extract it.</p>
 
-        <h3>Step 2 &mdash; OpenAI API key</h3>
-        <p>The bundled <code>.env</code> already contains a shared team API key &mdash; you don't need to do anything for the POC. Usage is billed centrally to Prateek's account.</p>
-        <p>If you want to use your own key later: open <code>.env</code> in Notepad, replace the value after <code>OPENAI_API_KEY=</code>, save.</p>
+        <h3>Step 2 &mdash; Your access key (your "seat")</h3>
+        <p>This tool runs on a <b>per-user subscription model</b>. Each person gets their <b>own access key</b>, issued by Prateek &mdash; think of it as your seat. Usage and billing are monitored centrally, so there is no shared key floating around.</p>
+        <ol>
+          <li>Ping <b>Prateek</b> to request a key. You'll receive a value that looks like <code>sk-&hellip;</code>.</li>
+          <li>In the extracted folder, open <code>.env</code> in Notepad (it sits next to <code>Nokia Orka Translator.exe</code>).</li>
+          <li>Paste your key after <code>OPENAI_API_KEY=</code> (no spaces, no quotes). Leave <code>PORT</code> and <code>NODE_ENV</code> as they are.</li>
+          <li>Save and close. Done &mdash; your key stays on your machine and is never shown in the app.</li>
+        </ol>
+        <p style="color:#5b6478;font-size:12px;">The shipped <code>.env</code> comes <b>empty on purpose</b> &mdash; no secret is embedded in the download. If you leave it empty the app will report <code>Incorrect API key</code> on first translation.</p>
 
         <h3>Step 3 &mdash; First launch</h3>
         <p>Double-click <code>Nokia Orka Translator.exe</code>. Windows shows a few one-time warnings:</p>
@@ -202,6 +344,18 @@
           <li>To uninstall: delete the extracted folder. That's it.</li>
         </ul>
 
+        <h3>Notes for Nokia laptops &amp; customer-protected systems</h3>
+        <p>This is an <b>unsigned proof-of-concept</b> that talks to an external service (OpenAI) over the internet. On managed devices that matters &mdash; please read before running:</p>
+        <ul>
+          <li><b>No admin rights needed.</b> The portable build runs from wherever you extract it. It does not install drivers, services, or registry entries.</li>
+          <li><b>SmartScreen warning is expected.</b> Because the build isn't code-signed yet, Windows shows "Windows protected your PC." Click <b>More info &rarr; Run anyway</b> (see Step 3a). This will go away once we ship a Nokia-signed build.</li>
+          <li><b>Endpoint protection (Defender / CrowdStrike / etc.) may quarantine it.</b> Managed Nokia endpoints can block unsigned executables. If the exe vanishes after extraction or won't launch, ask IT for a <b>folder exclusion</b> for the extracted folder, or run it from an IT-approved location. Do not disable your security tooling.</li>
+          <li><b>Outbound internet to <code>api.openai.com</code> (HTTPS / port 443) is required.</b> Everything else stays on your machine, but translation needs this one outbound connection. On networks behind a corporate proxy, that host must be reachable &mdash; if translation hangs or errors on a proxied/VPN network, IT may need to allow <code>api.openai.com</code>.</li>
+          <li><b>Firewall prompt</b> on first launch is for the app's own <i>local</i> server (localhost). Tick <b>Private networks</b> and allow &mdash; it is not opening you up to the internet.</li>
+          <li><b>Customer-protected / customer-managed systems:</b> please <b>do not run this on a customer's device or network without that customer's explicit approval.</b> The tool sends meeting audio to OpenAI for translation (see the <i>Architecture &amp; Security</i> panel for exactly what leaves the machine). On customer-protected systems that egress may breach the customer's data policy. <b>Test on your Nokia laptop, not on customer-protected systems</b>, unless the customer has signed off.</li>
+          <li><b>What is sent off-device:</b> only the meeting audio you choose to translate, to OpenAI, over TLS. No transcripts are stored or logged. Full details are in the <i>Architecture &amp; Security</i> panel &mdash; share that with your security contact if asked.</li>
+        </ul>
+
         <h3>Troubleshooting</h3>
         <ul>
           <li><b>Blank window for ~10 sec</b> &mdash; first launch starts the embedded server. Wait.</li>
@@ -216,7 +370,7 @@
         <p><b>Prateek Yadav</b> &mdash; Nokia MS - ORKA team<br/>prateek.yadav@nokia.com</p>
         <p style="color:#5b6478;font-size:12px;">This is a POC. Report freely &mdash; no escalation needed.</p>
 
-        <div class="meta">Multi-party build &mdash; v0.1 &middot; 2026-06-12.</div>
+        <div class="meta">Multi-party build &mdash; v1.0.1 &middot; 2026-06-16.</div>
       </div>
     </dialog>
 

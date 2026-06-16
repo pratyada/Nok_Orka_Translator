@@ -108,12 +108,19 @@ export function useAudioCapture(
       let stream: MediaStream;
 
       if (isDesktop) {
-        // Electron: use getDisplayMedia with system audio
-        // The main process auto-grants via setDisplayMediaRequestHandler
+        // Electron: use getDisplayMedia with system audio.
+        // The main process auto-grants via setDisplayMediaRequestHandler,
+        // returning a screen video source + "loopback" system audio.
+        // Chromium requires a video track to be requested even when we only
+        // want the audio — requesting `video: false` yields an empty/failed
+        // stream, so we request video and immediately drop the track.
         stream = await navigator.mediaDevices.getDisplayMedia({
           audio: true,
-          video: false, // We only need audio
+          video: true,
         } as any);
+
+        // We only need the loopback audio — discard the video track.
+        stream.getVideoTracks().forEach((t) => t.stop());
       } else {
         // Browser: use getDisplayMedia — user picks a tab/screen to share
         // Chrome supports audio capture from tabs
