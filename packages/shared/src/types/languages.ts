@@ -1,5 +1,10 @@
 export const SUPPORTED_LANGUAGES = {
-  en: { name: "English", bcp47: "en-US" },
+  en: { name: "English (US)", bcp47: "en-US" },
+  "en-GB": { name: "English (UK)", bcp47: "en-GB" },
+  "en-IN": { name: "English (India)", bcp47: "en-IN" },
+  "en-AU": { name: "English (Australia)", bcp47: "en-AU" },
+  "en-CA": { name: "English (Canada)", bcp47: "en-CA" },
+  "en-clear": { name: "English (Clear / Accent-Free)", bcp47: "en-US" },
   es: { name: "Spanish", bcp47: "es-ES" },
   fr: { name: "French", bcp47: "fr-FR" },
   pt: { name: "Portuguese", bcp47: "pt-BR" },

@@ -85,14 +85,26 @@ export class OpenAIRealtimeService extends EventEmitter {
     });
   }
 
-  private configureSession(): void {
-    const targetName = getLanguageName(this.target);
+  private buildInstructions(): string {
+    // Accent-normalization mode: render ALL speech (including English in any
+    // accent/dialect) as clear, neutral, standard English. Never stays silent.
+    if (this.target === "en-clear") {
+      return `You are a real-time English clarifier for Nokia business meetings.
 
-    this.send({
-      type: "session.update",
-      session: {
-        type: "realtime",
-        instructions: `You are a real-time translator for Nokia business meetings.
+Participants speak with many different accents and dialects (Indian, Finnish, Chinese, American, British, and more). Your task: render EVERYTHING you hear as clear, neutral, standard English — in both audio and text.
+
+CRITICAL RULES:
+1. ALWAYS produce output. Never stay silent, even when the speaker is already speaking English.
+2. If the speech is English in any accent or dialect, rewrite it into clear, grammatically standard, neutral-accent English. Smooth out accent-driven errors, filler, and broken grammar while preserving the exact meaning and intent.
+3. If the speech is in another language, translate it into clear, standard English.
+4. Output ONLY the clarified English. No greetings, commentary, or explanations.
+5. Preserve Nokia-specific product names, people names, and telecom terminology.
+6. Speak the output in a neutral, easy-to-understand English accent.
+7. If you cannot understand the speech, output "[unclear]".`;
+    }
+
+    const targetName = getLanguageName(this.target);
+    return `You are a real-time translator for Nokia business meetings.
 
 Your task: translate the speech you hear into ${targetName} (language code: ${this.target}).
 
@@ -101,7 +113,15 @@ CRITICAL RULES:
 2. Otherwise, translate the speech accurately to ${targetName}.
 3. Output ONLY the ${targetName} translation. Do not add greetings, commentary, or explanations.
 4. Preserve Nokia-specific product names, people names, and telecom terminology without translating them.
-5. If you cannot understand the speech, output "[unclear]" in ${targetName}.`,
+5. If you cannot understand the speech, output "[unclear]" in ${targetName}.`;
+  }
+
+  private configureSession(): void {
+    this.send({
+      type: "session.update",
+      session: {
+        type: "realtime",
+        instructions: this.buildInstructions(),
         audio: {
           input: {
             format: { type: "audio/pcm", rate: 24000 },
