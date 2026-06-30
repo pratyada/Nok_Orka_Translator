@@ -136,8 +136,9 @@ export function useAudioCapture(
       if (!stream.getAudioTracks().length) {
         setState((prev) => ({
           ...prev,
-          error:
-            "No system audio captured. Make sure to select 'Share audio' when prompted.",
+          error: isDesktop
+            ? "No system audio captured. Make sure to select 'Share audio' when prompted."
+            : "No system audio captured. In the share picker choose 'Entire Screen' (not a single window) and turn ON 'Also share system audio'. For a meeting in a browser tab, pick that tab and enable 'Share tab audio'. Chrome or Edge only.",
         }));
         return;
       }
