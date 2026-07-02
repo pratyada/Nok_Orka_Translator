@@ -109,6 +109,8 @@
     <div id="root"></div>
 
     <div class="dev-links">
+      <a onclick="document.getElementById('roadmap-modal').showModal()">Roadmap</a>
+      <span class="sep">&middot;</span>
       <a onclick="document.getElementById('languages-modal').showModal()">Languages Supported</a>
       <span class="sep">&middot;</span>
       <a onclick="document.getElementById('arch-modal').showModal()">Architecture &amp; Security</a>
@@ -117,6 +119,104 @@
       <span class="sep">&middot;</span>
       <a onclick="document.getElementById('guide-modal').showModal()">Setup Guide</a>
     </div>
+
+    <dialog id="roadmap-modal" class="dev-modal">
+      <div class="dev-modal-header">
+        <span>Roadmap &mdash; where Orka Translator is going</span>
+        <button class="dev-modal-close" onclick="this.closest('dialog').close()">&times;</button>
+      </div>
+      <div class="dev-modal-content">
+        <h3>Scope &mdash; accent conversion, not translation</h3>
+        <p>Per the requirements from Ashley &amp; Ashish, the goal is <b>real-time accent conversion</b>: take a Nokia agent's <b>Indian-accent English</b> and make the customer hear <b>natural American-accent English</b>. Same words, same person &mdash; only the accent changes.</p>
+        <ul>
+          <li><b>Accent conversion ONLY.</b> Regional-language &rarr; English translation is <b>not</b> required.</li>
+          <li><b>Natural &amp; human.</b> The converted voice must sound like a real person, <b>not</b> robotic or machine-generated.</li>
+          <li><b>Real-time, minimal latency.</b> The customer should feel they're speaking with a native American-English speaker &mdash; seamless.</li>
+          <li><b>One-directional (confirmed).</b> The customer's American English is <b>not</b> converted &mdash; it reaches the agent unchanged.</li>
+          <li><b>Integrations:</b> LeadDesk &amp; Google Meet for customer calls.</li>
+        </ul>
+
+        <h3>Who's who</h3>
+        <pre>
+   NOKIA AGENT  (NOC)                     CUSTOMER  (far end)
+   ------------------------------         ----------------------------
+   - ~100 agents  &middot;  100 seats            - installs NOTHING
+   - Orka app on each laptop              - uses LeadDesk / Google Meet
+   - speaks: Indian-accent English        - hears:  American-accent English
+
+     Indian-accent EN  --&gt; [ accent convert ] --&gt;  American-accent EN
+                                                          |
+                                                          v
+                                              Customer hears a natural
+                                              American-English voice
+
+   reverse: customer's American English goes STRAIGHT to the agent,
+            UNCHANGED (no conversion &mdash; one-directional)</pre>
+
+        <h3>The idea in one line</h3>
+        <p>A Nokia agent speaks English with an Indian accent; the customer hears it as <b>natural American-accented English, in real time</b> &mdash; converted on the agent's laptop <b>before</b> it reaches LeadDesk or Google Meet. Only the accent changes; the words and the person stay the same.</p>
+
+        <h3>Phase 1 &mdash; Real-time accent conversion at the agent's mic</h3>
+        <p><b>Goal:</b> convert the agent's Indian-accent English to natural American-accent English <i>before</i> it enters the call tool, so the customer needs no software at all.</p>
+        <pre>
+[ Agent speaks &mdash; Indian-accent English ]
+              |  microphone
+              v
++-------------------------------------------------------+
+|  ORKA  -  agent laptop                                |
+|    1. capture mic audio          (Indian-accent EN)   |
+|    2. real-time ACCENT CONVERSION  --&gt;  American EN    |
+|       (natural, voice-preserving  -  NOT a robot TTS) |
+|    3. expose result as a VIRTUAL MICROPHONE           |
++-------------------------------------------------------+
+              |  virtual mic  (American-accent EN)
+              v
+   +-------------------------------------+
+   |  LeadDesk   /   Google Meet         |   &lt;-- agent picks the virtual mic
+   +-------------------------------------+
+              |
+              v
+[ CUSTOMER hears natural American English ]  &lt;-- nothing to install</pre>
+        <ul>
+          <li><b>App-agnostic delivery.</b> Orka presents itself as a normal microphone ("Orka Virtual Mic"). Because conversion happens at the <i>mic layer, before any app</i>, it works with LeadDesk, Google Meet, and any tool that lets the agent pick their mic &mdash; no per-app integration needed.</li>
+          <li><b>Zero customer footprint.</b> The customer installs nothing, sets up nothing, and only ever receives normal audio.</li>
+          <li><b>Delivery = standalone desktop app + virtual-audio driver.</b> A browser <b>cannot</b> expose a system microphone, so this path needs the standalone build plus a bundled <b>virtual-audio driver</b> &mdash; shipped in one installer, admin rights once.</li>
+        </ul>
+
+        <h3>What each side needs</h3>
+        <pre>
+   CUSTOMER (far end)       NOKIA AGENT
+   ------------------       --------------------------------------------
+   nothing                  one installer:
+    - no app                  - Orka app (real-time accent converter)
+    - no setup                - virtual-audio driver (appears as a mic)
+    - no account              - admin rights ONCE to install the driver
+                              - pick "Orka Virtual Mic" in LeadDesk / Meet</pre>
+
+        <h3>Status &mdash; built vs. still to build</h3>
+        <ul>
+          <li><b>Built today (a translation POC):</b> capture audio &rarr; transcribe &rarr; translate &rarr; synthesize with a TTS voice. Useful for multi-language, but for <i>this</i> use case it (a) replaces the agent's voice with a <b>robotic</b> one and (b) adds <b>~1.5&ndash;4s latency</b> &mdash; so it does <b>not</b> yet meet "natural + real-time".</li>
+          <li><b>Still to build (the core of Phase 1):</b> a <b>real-time, voice-preserving accent-conversion</b> capability (speech-to-speech: Indian EN &rarr; American EN, natural voice, sub-second) &mdash; <b>plus</b> the virtual-mic driver so it feeds LeadDesk / Google Meet instead of the speakers. This is the main engineering work.</li>
+        </ul>
+
+        <h3>Key considerations (honest trade-offs)</h3>
+        <ul>
+          <li><b>Accent conversion &ne; translation.</b> They're different model classes. The current transcribe&rarr;translate&rarr;TTS pipeline sounds robotic and is turn-based; meeting "natural + native-like" needs a dedicated <b>speech-to-speech accent-conversion model</b>, not the translation pipeline.</li>
+          <li><b>Latency is the hardest requirement.</b> To feel native, conversion must be <b>streaming / sub-second</b>, not the multi-second turn-taking of translation. This is the primary technical risk to prove out.</li>
+          <li><b>Voice preservation.</b> Ideally keep the agent's own timbre and only shift pronunciation/accent, so it doesn't feel like a different, synthetic person.</li>
+          <li><b>Virtual-audio driver needs admin rights + code-signing.</b> A system audio device is a signed, installed component &mdash; likely IT approval on managed Nokia laptops.</li>
+        </ul>
+
+        <h3>Where this is heading (proposed &mdash; to refine)</h3>
+        <p style="color:#5b6478;">Bidirectional conversion is explicitly out of scope (customer&rarr;agent is unchanged). Later phases:</p>
+        <ul>
+          <li><b>Phase 2 &mdash; Fleet / seat management.</b> Central provisioning of the ~100 seats: per-user keys, usage monitoring, and an admin view (aligns with the per-user subscription model).</li>
+          <li><b>Phase 3 &mdash; Enterprise &amp; data boundary.</b> Policy-aware routing, region / data-residency controls, and optional on-prem model hosting (see the Architecture &amp; Security panel).</li>
+        </ul>
+
+        <div class="meta">Roadmap &mdash; working draft &middot; requirements per Ashley &amp; Ashish &middot; Contact: Prateek Yadav, Nokia MS - ORKA team &middot; prateek.yadav@nokia.com</div>
+      </div>
+    </dialog>
 
     <dialog id="languages-modal" class="dev-modal">
       <div class="dev-modal-header">
